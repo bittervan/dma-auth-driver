@@ -1088,6 +1088,14 @@ config MMC_SDHCI_AM654
 
 	  If unsure, say N.
 
+config FPGA_AXI_SDC
+	tristate "FPGA AXI SD Card Controller"
+	help
+	  This selects the FPGA AXI SD Card controller. If you have
+	  a FPGA development board with SD or MMC devices, say Y or M here.
+
+	  If unsure, say N.
+
 config MMC_OWL
 	tristate "Actions Semi Owl SD/MMC Host Controller support"
 	depends on HAS_DMA
