@@ -569,6 +569,16 @@ static int xilinx_pcie_probe(struct platform_device *pdev)
 	struct xilinx_pcie *pcie;
 	struct pci_host_bridge *bridge;
 	int err;
+	// volatile uint64_t* first_pos;
+
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram\n");
+	// first_pos = ioremap(0x60100000, 0x100000);
+	// pr_info("[bittervan] ioremap_done\n");
+	// first_pos[0] = 0xcafebabedeadbeefUL;
+	// first_pos[1] = 0xcafebabedeadbeefUL;
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
+	// first_pos[0xffff8] = 0xcafebabedeadbeefUL;
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0xffff8]);
 
 	if (!dev->of_node)
 		return -ENODEV;
