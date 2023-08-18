@@ -453,6 +453,8 @@ void dma_direct_sync_sg_for_cpu(struct device *dev,
 		arch_sync_dma_for_cpu_all();
 }
 
+extern int dma_guard_mapping_count;
+
 /*
  * Unmaps segments, except for ones marked as pci_p2pdma which do not
  * require any further action as they contain a bus address.
@@ -466,9 +468,11 @@ void dma_direct_unmap_sg(struct device *dev, struct scatterlist *sgl,
 	for_each_sg(sgl,  sg, nents, i) {
 		if (sg_is_dma_bus_address(sg))
 			sg_dma_unmark_bus_address(sg);
-		else
+		else {
+			sg->dma_address = dma_guard_unmap(sg->dma_address);
 			dma_direct_unmap_page(dev, sg->dma_address,
 					      sg_dma_len(sg), dir, attrs);
+		}
 	}
 }
 #endif
@@ -507,6 +511,8 @@ int dma_direct_map_sg(struct device *dev, struct scatterlist *sgl, int nents,
 			ret = -EIO;
 			goto out_unmap;
 		}
+
+		sg->dma_address = dma_guard_map(dev, sg->dma_address, sg->length, dir);
 		sg_dma_len(sg) = sg->length;
 	}
 
@@ -653,4 +659,89 @@ int dma_direct_set_offset(struct device *dev, phys_addr_t cpu_start,
 	map[0].size = size;
 	dev->dma_range_map = map;
 	return 0;
+}
+
+#define DMA_GUARD_KEY_HARDWARE_ADDR 0x60200000
+#define DMA_GUARD_TABLE_HARDWARE_ADDR 0x60300000
+
+struct __attribute__((__packed__)) dma_guard_metadata {
+	uint32_t attr;
+	uint32_t identifier;
+	uint32_t lower_bound;
+	uint32_t upper_bound;
+};
+
+volatile struct dma_guard_metadata *dma_guard_metadata = NULL;
+volatile uint64_t dma_guard_key;
+
+uint16_t dma_guard_hash(dma_addr_t dma_handle, struct dma_guard_metadata metadata) {
+	uint16_t ret;
+	uint32_t xor;
+	xor = metadata.attr ^ metadata.identifier ^ metadata.lower_bound ^ metadata.upper_bound;
+	xor = xor ^ dma_guard_key;
+	ret = (xor >> 16) ^ (dma_handle >> ((metadata.attr << 2) >> 27));
+	return ret;
+};
+
+// Take the bare DMA pointer as input, create the mapping, and return the DMAGuard pointer
+dma_addr_t dma_guard_map(struct device *dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction) {
+	dma_addr_t ret;
+	uint32_t offset_length = 0;
+	struct dma_guard_metadata metadata;
+	uint16_t hash;
+
+	// if (dev_name(dev)[4] == ':') {
+	// 	return dma_handle;
+	// }
+
+	if (!dma_guard_metadata) { // Not initialized, initialize key, the metadata reset is conducted by the hardware itself
+		uint64_t* dma_guard_key_slot = ioremap(DMA_GUARD_KEY_HARDWARE_ADDR, 0x200000);
+		uint64_t key = get_random_u64();
+		*dma_guard_key_slot = key;
+		dma_guard_key = key;
+
+		dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
+	}
+
+	metadata.lower_bound = dma_handle;
+	metadata.upper_bound = dma_handle + size - 1;
+
+	for (int i = 0; i < 32; i++) {
+		if ((metadata.lower_bound) >> i == (metadata.upper_bound >> i)) {
+			offset_length = i;
+			break;			
+		}
+	}
+	
+	// Here, 00 means no access
+	// 11 mean r/w, 01 mean wo, 10 means ro 
+	metadata.attr = ((~direction) << 30) | (offset_length << 25) | 0;
+
+	while (1) {
+		metadata.identifier = get_random_u32();
+		hash = dma_guard_hash(dma_handle, metadata);
+		// pr_info("***hash: %x\n", hash);
+		if (!(dma_guard_metadata[hash].attr & 0xc0000000)) {
+			dma_guard_metadata[hash] = metadata;
+			break;
+		}
+	}
+
+	ret = dma_handle | ((uint64_t)hash << 48);
+
+	pr_info("*** DMAGuard *** device: %s, %016llx *** Mapping ***\n", dev_name(dev), ret);
+	return ret;
+}
+
+// Take the DMAGuard pointer as input, remove the mapping, return the bare DMA pointer
+dma_addr_t dma_guard_unmap(dma_addr_t dma_handle) {
+	dma_addr_t ret;
+	uint16_t hash = dma_handle >> 48;
+
+	BUG_ON(dma_guard_metadata[hash].attr == 0);
+	dma_guard_metadata[hash].attr = 0;
+
+	// BUG_ON((dma_handle & DMA_GUARD_PROTOTYPE_MASK) != DMA_GUARD_PROTOTYPE_MASK);
+	ret = dma_handle ^ DMA_GUARD_PROTOTYPE_MASK;
+	return ret;
 }

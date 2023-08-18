@@ -334,10 +334,12 @@ static irqreturn_t sdc_isr(int irq, void * dev_id) {
     uint32_t card_detect = 0;
     uint32_t data_status = 0;
     unsigned long flags;
+    // printk("hit sdc_isr\n");
 
     spin_lock_irqsave(&host->lock, flags);
 
     card_detect = host->regs->card_detect;
+    // printk("in hit sdc_isr, card_detect: %x\n", card_detect);
     if (card_detect & SDC_CARD_INSERT_INT_REQ) {
         if (card_detect & SDC_CARD_INSERT_INT_EN) {
             host->regs->card_detect = SDC_CARD_REMOVE_INT_EN;
@@ -396,6 +398,7 @@ static int axi_sdc_probe(struct platform_device * pdev) {
     int irq;
     int ret;
 
+    // printk("enter axi_sdc_probe\n");
     iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
     ioaddr = devm_ioremap_resource(dev, iomem);
     if (IS_ERR(ioaddr)) return PTR_ERR(ioaddr);
@@ -450,10 +453,14 @@ static int axi_sdc_probe(struct platform_device * pdev) {
             printk(KERN_ERR "AXI-SDC: Can't set DMA mask\n");
             mmc_free_host(mmc);
             return ret;
+        } else {
+            // printk("dma_set_mask_and_coherent correctly\n");
         }
     }
 
+    // printk("before reset\n");
     sdc_reset(mmc);
+    // printk("end reset\n");
 
     ret = mmc_add_host(mmc);
     if (ret) {
@@ -465,6 +472,34 @@ static int axi_sdc_probe(struct platform_device * pdev) {
     spin_lock_init(&host->lock);
 
     platform_set_drvdata(pdev, host);
+    // printk("axi_sdc_probe done\n");
+
+    // printk("argument: %x\n", host->regs->argument);
+    // printk("command: %x\n", host->regs->command);
+    // printk("response1: %x\n", host->regs->response1);
+    // printk("response2: %x\n", host->regs->response2);
+    // printk("response3: %x\n", host->regs->response3);
+    // printk("response4: %x\n", host->regs->response4);
+    // printk("data_timeout: %x\n", host->regs->data_timeout);
+    // printk("control: %x\n", host->regs->control);
+    // printk("cmd_timeout: %x\n", host->regs->cmd_timeout);
+    // printk("clock_divider: %x\n", host->regs->clock_divider);
+    // printk("software_reset: %x\n", host->regs->software_reset);
+    // printk("power_control: %x\n", host->regs->power_control);
+    // printk("capability: %x\n", host->regs->capability);
+    // printk("cmd_int_status: %x\n", host->regs->cmd_int_status);
+    // printk("cmd_int_enable: %x\n", host->regs->cmd_int_enable);
+    // printk("dat_int_status: %x\n", host->regs->dat_int_status);
+    // printk("dat_int_enable: %x\n", host->regs->dat_int_enable);
+    // printk("block_size: %x\n", host->regs->block_size);
+    // printk("block_count: %x\n", host->regs->block_count);
+    // printk("card_detect: %x\n", host->regs->card_detect);
+    // printk("res_50: %x\n", host->regs->res_50);
+    // printk("res_54: %x\n", host->regs->res_54);
+    // printk("res_58: %x\n", host->regs->res_58);
+    // printk("res_5c: %x\n", host->regs->res_5c);
+    // printk("dma_addres: %llx\n", host->regs->dma_addres);
+
     return 0;
 }
 

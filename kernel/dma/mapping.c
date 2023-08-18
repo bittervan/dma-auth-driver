@@ -160,6 +160,7 @@ dma_addr_t dma_map_page_attrs(struct device *dev, struct page *page,
 	kmsan_handle_dma(page, offset, size, dir);
 	debug_dma_map_page(dev, page, offset, size, dir, addr, attrs);
 
+	addr = dma_guard_map(dev, addr, size, dir);
 	return addr;
 }
 EXPORT_SYMBOL(dma_map_page_attrs);
@@ -168,6 +169,8 @@ void dma_unmap_page_attrs(struct device *dev, dma_addr_t addr, size_t size,
 		enum dma_data_direction dir, unsigned long attrs)
 {
 	const struct dma_map_ops *ops = get_dma_ops(dev);
+
+	addr = dma_guard_unmap(addr);
 
 	BUG_ON(!valid_dma_direction(dir));
 	if (dma_map_direct(dev, ops) ||
@@ -498,8 +501,9 @@ void *dma_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle,
 
 	WARN_ON_ONCE(!dev->coherent_dma_mask);
 
-	if (dma_alloc_from_dev_coherent(dev, size, dma_handle, &cpu_addr))
-		return cpu_addr;
+	if (dma_alloc_from_dev_coherent(dev, size, dma_handle, &cpu_addr)) {
+		goto dma_alloc_attrs_return;
+	}
 
 	/* let the implementation decide on the zone to allocate from: */
 	flag &= ~(__GFP_DMA | __GFP_DMA32 | __GFP_HIGHMEM);
@@ -512,6 +516,9 @@ void *dma_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle,
 		return NULL;
 
 	debug_dma_alloc_coherent(dev, size, *dma_handle, cpu_addr, attrs);
+
+dma_alloc_attrs_return:
+	*dma_handle = dma_guard_map(dev, *dma_handle, size, DMA_BIDIRECTIONAL);
 	return cpu_addr;
 }
 EXPORT_SYMBOL(dma_alloc_attrs);
@@ -520,6 +527,8 @@ void dma_free_attrs(struct device *dev, size_t size, void *cpu_addr,
 		dma_addr_t dma_handle, unsigned long attrs)
 {
 	const struct dma_map_ops *ops = get_dma_ops(dev);
+
+	dma_handle = dma_guard_unmap(dma_handle);
 
 	if (dma_release_from_dev_coherent(dev, get_order(size), cpu_addr))
 		return;
@@ -566,8 +575,10 @@ struct page *dma_alloc_pages(struct device *dev, size_t size,
 {
 	struct page *page = __dma_alloc_pages(dev, size, dma_handle, dir, gfp);
 
-	if (page)
+	if (page) {
 		debug_dma_map_page(dev, page, 0, size, dir, *dma_handle, 0);
+		*dma_handle = dma_guard_map(dev, *dma_handle, size, dir);
+	}
 	return page;
 }
 EXPORT_SYMBOL_GPL(dma_alloc_pages);
@@ -587,6 +598,8 @@ static void __dma_free_pages(struct device *dev, size_t size, struct page *page,
 void dma_free_pages(struct device *dev, size_t size, struct page *page,
 		dma_addr_t dma_handle, enum dma_data_direction dir)
 {
+	dma_handle = dma_guard_unmap(dma_handle);
+
 	debug_dma_unmap_page(dev, dma_handle, size, dir);
 	__dma_free_pages(dev, size, page, dma_handle, dir);
 }

@@ -519,6 +519,7 @@ static void xilinx_pcie_init_port(struct xilinx_pcie *pcie)
 	pcie_write(pcie, pcie_read(pcie, XILINX_PCIE_REG_RPSC) |
 			 XILINX_PCIE_REG_RPSC_BEN,
 		   XILINX_PCIE_REG_RPSC);
+	printk("xilinx_pcie_init_port done\n");
 }
 
 /**
@@ -546,6 +547,7 @@ static int xilinx_pcie_parse_dt(struct xilinx_pcie *pcie)
 		return PTR_ERR(pcie->reg_base);
 
 	irq = irq_of_parse_and_map(node, 0);
+	printk("get irq: %x\n", irq);
 	err = devm_request_irq(dev, irq, xilinx_pcie_intr_handler,
 			       IRQF_SHARED | IRQF_NO_THREAD,
 			       "xilinx-pcie", pcie);
@@ -556,6 +558,18 @@ static int xilinx_pcie_parse_dt(struct xilinx_pcie *pcie)
 
 	return 0;
 }
+
+struct metadata {
+	uint64_t lo;
+	uint64_t hi;
+};
+
+// static void dma_guard_check(void) {
+
+	// for (int i = 0; i < 32768; i += 1000) {
+	// 	pr_info("[bittervan] reading metadata %08x: %016llx%016llx\n", i, metadata[i].hi, metadata[i].lo);
+	// }
+// }
 
 /**
  * xilinx_pcie_probe - Probe function
@@ -569,19 +583,40 @@ static int xilinx_pcie_probe(struct platform_device *pdev)
 	struct xilinx_pcie *pcie;
 	struct pci_host_bridge *bridge;
 	int err;
-	// volatile uint64_t* first_pos;
+	// dma_guard_check();
+	volatile uint64_t* first_pos;
+	volatile struct metadata *metadata;
 
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram\n");
-	// first_pos = ioremap(0x60100000, 0x100000);
-	// pr_info("[bittervan] ioremap_done\n");
-	// first_pos[0] = 0xcafebabedeadbeefUL;
-	// first_pos[1] = 0xcafebabedeadbeefUL;
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
-	// first_pos[0xffff8] = 0xcafebabedeadbeefUL;
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0xffff8]);
+	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram\n");
+	first_pos = ioremap(0x60200000, 0x200000);
+	pr_info("[bittervan] ioremap_done\n");
+	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
+	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
+	first_pos[0] = 0xcafebabedeadbeefUL;
+	first_pos[1] = 0x0123456789abcdefUL;
+	pr_info("[bittervan] write done\n");
+	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
+	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
+
+
+
+	metadata = (struct metadata*)((void*)first_pos + 0x100000);
+	for (int i = 0; i < 32768; i += 1000) {
+		metadata[i].hi = i;
+		metadata[i].lo = i + 500;
+	}
+	pr_info("[bittervan] writing metadata done\n");
+
+	for (int i = 0; i < 32768; i += 1000) {
+		pr_info("[bittervan] reading metadata %08x: %016llx%016llx\n", i, metadata[i].hi, metadata[i].lo);
+	}
+
+	iounmap(first_pos);
 
 	if (!dev->of_node)
 		return -ENODEV;
+
+
 
 	bridge = devm_pci_alloc_host_bridge(dev, sizeof(*pcie));
 	if (!bridge)

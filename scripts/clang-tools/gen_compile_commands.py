@@ -25,8 +25,6 @@ _VALID_LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
 # files in a different format. Do not support it.
 _EXCLUDE_DIRS = ['.git', 'Documentation', 'include', 'tools']
 
-_FILTER_PATTERN = r'\-mabi=lp64|\-fno-var-tracking-assignments|\-fconserve-stack|\-mstack-protector-guard=sysreg|\-mstack-protector-guard-reg=sp_el0|\-mstack-protector-guard-offset=1240|\-fno-allow-store-data-races|\-femit-struct-debug-baseonly|\-ftrivial-auto-var-init=zero'
-
 def parse_arguments():
     """Sets up and parses command-line arguments.
 
@@ -173,8 +171,6 @@ def process_line(root_directory, command_prefix, file_path):
     # kernel version). The compile_commands.json file is not interepreted
     # by Make, so this code replaces the escaped version with '#'.
     prefix = command_prefix.replace('\#', '#').replace('$(pound)', '#')
-
-    prefix = re.sub(_FILTER_PATTERN, "", prefix)
 
     # Use os.path.abspath() to normalize the path resolving '.' and '..' .
     abs_path = os.path.abspath(os.path.join(root_directory, file_path))
