@@ -10,7 +10,7 @@
 #include <linux/dma-direct.h>
 #include <linux/memremap.h>
 
-#define DMA_GUARD_PROTOTYPE_MASK 0xcafe000000000000UL
+// #define DMA_GUARD_PROTOTYPE_MASK 0xcafe000000000000UL
 
 int dma_direct_get_sgtable(struct device *dev, struct sg_table *sgt,
 		void *cpu_addr, dma_addr_t dma_addr, size_t size,
@@ -131,5 +131,5 @@ static inline void dma_direct_unmap_page(struct device *dev, dma_addr_t addr,
 dma_addr_t dma_guard_map(struct device* dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction);
 
 // Take the DMAGuard pointer as input, remove the mapping, return the bare DMA pointer
-dma_addr_t dma_guard_unmap(dma_addr_t dma_handle);
+dma_addr_t dma_guard_unmap(struct device* dev, dma_addr_t dma_handle, size_t size);
 #endif /* _KERNEL_DMA_DIRECT_H */

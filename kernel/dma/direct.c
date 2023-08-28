@@ -469,7 +469,7 @@ void dma_direct_unmap_sg(struct device *dev, struct scatterlist *sgl,
 		if (sg_is_dma_bus_address(sg))
 			sg_dma_unmark_bus_address(sg);
 		else {
-			sg->dma_address = dma_guard_unmap(sg->dma_address);
+			sg->dma_address = dma_guard_unmap(dev, sg->dma_address, sg_dma_len(sg));
 			dma_direct_unmap_page(dev, sg->dma_address,
 					      sg_dma_len(sg), dir, attrs);
 		}
@@ -673,6 +673,7 @@ struct __attribute__((__packed__)) dma_guard_metadata {
 
 volatile struct dma_guard_metadata *dma_guard_metadata = NULL;
 volatile uint64_t dma_guard_key;
+volatile int _mapping_count = 0;
 
 uint16_t dma_guard_hash(dma_addr_t dma_handle, struct dma_guard_metadata metadata) {
 	uint16_t ret;
@@ -683,29 +684,44 @@ uint16_t dma_guard_hash(dma_addr_t dma_handle, struct dma_guard_metadata metadat
 	return ret;
 };
 
+void dma_guard_dump(void) {
+	pr_info("------------------------------------------\n");
+	for (int i = 0; i < 0x10000; i++) {
+		if (dma_guard_metadata[i].attr) {
+			pr_info("[%04x] %08x %08x %08x %08x\n", i, dma_guard_metadata[i].attr, dma_guard_metadata[i].identifier, dma_guard_metadata[i].lower_bound, dma_guard_metadata[i].upper_bound);
+		}
+	}
+}
+
 // Take the bare DMA pointer as input, create the mapping, and return the DMAGuard pointer
-dma_addr_t dma_guard_map(struct device *dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction) {
+__attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction) {
 	dma_addr_t ret;
 	uint32_t offset_length = 0;
 	struct dma_guard_metadata metadata;
 	uint16_t hash;
 
-	// if (dev_name(dev)[4] == ':') {
-	// 	return dma_handle;
-	// }
+	if (dev_name(dev)[4] == '0') {
+		return dma_handle;
+	}
 
 	if (!dma_guard_metadata) { // Not initialized, initialize key, the metadata reset is conducted by the hardware itself
 		uint64_t* dma_guard_key_slot = ioremap(DMA_GUARD_KEY_HARDWARE_ADDR, 0x200000);
+		// uint64_t* dma_guard_key_slot = kmalloc(0x200000, GFP_KERNEL);
 		uint64_t key = get_random_u64();
 		*dma_guard_key_slot = key;
 		dma_guard_key = key;
 
 		dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
+
+		for (int i = 0; i < 0x10000; i++) {
+			dma_guard_metadata[i].attr = 0;
+		}
 	}
 
 	metadata.lower_bound = dma_handle;
 	metadata.upper_bound = dma_handle + size - 1;
 
+	// get common prefix length
 	for (int i = 0; i < 32; i++) {
 		if ((metadata.lower_bound) >> i == (metadata.upper_bound >> i)) {
 			offset_length = i;
@@ -717,31 +733,67 @@ dma_addr_t dma_guard_map(struct device *dev, dma_addr_t dma_handle, size_t size,
 	// 11 mean r/w, 01 mean wo, 10 means ro 
 	metadata.attr = ((~direction) << 30) | (offset_length << 25) | 0;
 
+	_mapping_count++;
+
 	while (1) {
 		metadata.identifier = get_random_u32();
 		hash = dma_guard_hash(dma_handle, metadata);
 		// pr_info("***hash: %x\n", hash);
-		if (!(dma_guard_metadata[hash].attr & 0xc0000000)) {
+		if (dma_guard_metadata[hash].attr == 0) {
 			dma_guard_metadata[hash] = metadata;
+			// BUG_ON(dma_guard_metadata[hash].attr == 0);
+			if (
+				(dma_guard_metadata[hash].attr != metadata.attr) ||
+				(dma_guard_metadata[hash].identifier != metadata.identifier) ||
+				(dma_guard_metadata[hash].lower_bound != metadata.lower_bound) ||
+				(dma_guard_metadata[hash].upper_bound != metadata.upper_bound)
+			) {
+				pr_info("Not written correctly, in hardware: %08x %08x %08x %08x, pointer: %016llx, total mapping: %08x\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
+				pr_info("Not written correctly, in metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %08x\n",  metadata.attr, metadata.identifier, metadata.lower_bound, metadata.upper_bound, dma_handle, _mapping_count);
+			}
 			break;
+		} else {
+			pr_info("Slot taken, metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %08x\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
 		}
 	}
 
 	ret = dma_handle | ((uint64_t)hash << 48);
 
-	pr_info("*** DMAGuard *** device: %s, %016llx *** Mapping ***\n", dev_name(dev), ret);
+	// dma_guard_dump();
+	// pr_info("*** DMAGuard *** device: %s, %016llx *** Mapping ***, count: %x\n", dev_name(dev), ret, ++_mapping_count);
 	return ret;
 }
 
 // Take the DMAGuard pointer as input, remove the mapping, return the bare DMA pointer
-dma_addr_t dma_guard_unmap(dma_addr_t dma_handle) {
+__attribute__((optimize("O0"))) dma_addr_t dma_guard_unmap(struct device *dev, dma_addr_t dma_handle, size_t size) {
 	dma_addr_t ret;
 	uint16_t hash = dma_handle >> 48;
 
-	BUG_ON(dma_guard_metadata[hash].attr == 0);
+	if (dev_name(dev)[4] == '0') {
+		return dma_handle;
+	} else if (dev_name(dev)[4] != ':') {
+		pr_info("unknown device: %s\n", dev_name(dev));
+	}
+
+	if (((dma_handle & 0xffffffffffff) != dma_guard_metadata[hash].lower_bound) || (dma_handle & 0xffffffffffff) + size != dma_guard_metadata[hash].upper_bound + 1) {
+		pr_info("Not a legal unmap: %016llx, size: %08lx metadata: %08x %08x %08x %08x, pointer: %016llx\n", dma_handle, size, dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle);
+		dma_guard_dump();
+		dump_stack();
+		while (1);
+	}
+	// BUG_ON(dma_guard_metadata[hash].attr == 0);
+	if (dma_guard_metadata[hash].attr == 0) {
+		pr_info("Buffer already unmapped: %016llx, metadata: %08x %08x %08x %08x, pointer: %016llx\n", dma_handle, dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle);
+		dma_guard_dump();
+		dump_stack();
+		while (1);
+	}
 	dma_guard_metadata[hash].attr = 0;
 
 	// BUG_ON((dma_handle & DMA_GUARD_PROTOTYPE_MASK) != DMA_GUARD_PROTOTYPE_MASK);
-	ret = dma_handle ^ DMA_GUARD_PROTOTYPE_MASK;
+	ret = dma_handle & 0xffffffffffff;
+	// dma_guard_dump();
+	// pr_info("*** DMAGuard *** device: %s, %016llx ** Unmapping **, count: %x\n", dev_name(dev), dma_handle, --_mapping_count);
+	_mapping_count--;
 	return ret;
 }

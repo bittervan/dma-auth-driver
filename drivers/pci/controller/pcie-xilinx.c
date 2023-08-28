@@ -587,31 +587,45 @@ static int xilinx_pcie_probe(struct platform_device *pdev)
 	volatile uint64_t* first_pos;
 	volatile struct metadata *metadata;
 
-	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram\n");
-	first_pos = ioremap(0x60200000, 0x200000);
-	pr_info("[bittervan] ioremap_done\n");
-	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
-	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
-	first_pos[0] = 0xcafebabedeadbeefUL;
-	first_pos[1] = 0x0123456789abcdefUL;
-	pr_info("[bittervan] write done\n");
-	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
-	pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram\n");
+	// first_pos = ioremap(0x60200000, 0x200000);
+	// pr_info("[bittervan] ioremap_done\n");
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
+	// first_pos[0] = 0xcafebabedeadbeefUL;
+	// first_pos[1] = 0x0123456789abcdefUL;
+	// pr_info("[bittervan] write done\n");
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
+	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
 
 
+	// metadata = (struct metadata*)((void*)first_pos + 0x100000);
 
-	metadata = (struct metadata*)((void*)first_pos + 0x100000);
-	for (int i = 0; i < 32768; i += 1000) {
-		metadata[i].hi = i;
-		metadata[i].lo = i + 500;
-	}
-	pr_info("[bittervan] writing metadata done\n");
+	// volatile char* metadata_buffer = ioremap(0x60300000, 0x100000);
+	// for (int i = 0; i < 0x100000; i++) {
+	// 	metadata_buffer[i] = ((uint32_t)i) & 0xff;
+	// }
+	// pr_info("[bittervan] writing metadata done\n");
+	// for (int i = 0; i < 0x100000; i++) {
+	// 	if (metadata_buffer[i] != (char)(((uint32_t)i) & 0xff)) {
+	// 		pr_info("[bittervan] metadata is not correct\n");
+	// 		pr_info("********* %x *********\n", i);
+	// 		pr_info("in hardware: %x\n", metadata_buffer[i]);
+	// 		while (1);
+	// 	}
+	// }
 
-	for (int i = 0; i < 32768; i += 1000) {
-		pr_info("[bittervan] reading metadata %08x: %016llx%016llx\n", i, metadata[i].hi, metadata[i].lo);
-	}
+	// for (int i = 0; i < 32768; i += 1000) {
+	// 	metadata[i].hi = i;
+	// 	metadata[i].lo = i + 500;
+	// }
+	// pr_info("[bittervan] writing metadata done\n");
 
-	iounmap(first_pos);
+	// for (int i = 0; i < 32768; i += 1000) {
+	// 	pr_info("[bittervan] reading metadata %08x: %016llx%016llx\n", i, metadata[i].hi, metadata[i].lo);
+	// }
+
+	// iounmap(first_pos);
 
 	if (!dev->of_node)
 		return -ENODEV;

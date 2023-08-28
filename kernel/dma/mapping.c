@@ -170,7 +170,7 @@ void dma_unmap_page_attrs(struct device *dev, dma_addr_t addr, size_t size,
 {
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
-	addr = dma_guard_unmap(addr);
+	addr = dma_guard_unmap(dev, addr, size);
 
 	BUG_ON(!valid_dma_direction(dir));
 	if (dma_map_direct(dev, ops) ||
@@ -528,7 +528,7 @@ void dma_free_attrs(struct device *dev, size_t size, void *cpu_addr,
 {
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
-	dma_handle = dma_guard_unmap(dma_handle);
+	dma_handle = dma_guard_unmap(dev, dma_handle, size);
 
 	if (dma_release_from_dev_coherent(dev, get_order(size), cpu_addr))
 		return;
@@ -598,7 +598,7 @@ static void __dma_free_pages(struct device *dev, size_t size, struct page *page,
 void dma_free_pages(struct device *dev, size_t size, struct page *page,
 		dma_addr_t dma_handle, enum dma_data_direction dir)
 {
-	dma_handle = dma_guard_unmap(dma_handle);
+	dma_handle = dma_guard_unmap(dev, dma_handle, size);
 
 	debug_dma_unmap_page(dev, dma_handle, size, dir);
 	__dma_free_pages(dev, size, page, dma_handle, dir);
