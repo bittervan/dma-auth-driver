@@ -675,6 +675,8 @@ volatile struct dma_guard_metadata *dma_guard_metadata = NULL;
 volatile uint64_t dma_guard_key;
 volatile int _mapping_count = 0;
 
+volatile uint64_t total_map_operations = 0;
+
 uint16_t dma_guard_hash(dma_addr_t dma_handle, struct dma_guard_metadata metadata) {
 	uint16_t ret;
 	uint32_t xor;
