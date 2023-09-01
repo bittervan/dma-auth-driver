@@ -750,12 +750,12 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 				(dma_guard_metadata[hash].lower_bound != metadata.lower_bound) ||
 				(dma_guard_metadata[hash].upper_bound != metadata.upper_bound)
 			) {
-				pr_info("Not written correctly, in hardware: %08x %08x %08x %08x, pointer: %016llx, total mapping: %08x\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
-				pr_info("Not written correctly, in metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %08x\n",  metadata.attr, metadata.identifier, metadata.lower_bound, metadata.upper_bound, dma_handle, _mapping_count);
+				pr_info("Not written correctly, in hardware: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
+				pr_info("Not written correctly, in metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  metadata.attr, metadata.identifier, metadata.lower_bound, metadata.upper_bound, dma_handle, _mapping_count);
 			}
 			break;
 		} else {
-			pr_info("Slot taken, metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %08x\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
+			pr_info("Slot taken, metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
 		}
 	}
 
