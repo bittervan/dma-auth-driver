@@ -672,7 +672,8 @@ struct __attribute__((__packed__)) dma_guard_metadata {
 };
 
 volatile struct dma_guard_metadata *dma_guard_metadata = NULL;
-volatile uint64_t dma_guard_key;
+volatile uint64_t dma_guard_keyh;
+volatile uint64_t dma_guard_keyl;
 volatile int _mapping_count = 0;
 
 volatile uint64_t total_map_operations = 0;
@@ -681,7 +682,7 @@ uint16_t dma_guard_hash(dma_addr_t dma_handle, struct dma_guard_metadata metadat
 	uint16_t ret;
 	uint32_t xor;
 	xor = metadata.attr ^ metadata.identifier ^ metadata.lower_bound ^ metadata.upper_bound;
-	xor = xor ^ dma_guard_key;
+	xor = xor ^ dma_guard_keyl;
 	ret = (xor >> 16) ^ (dma_handle >> ((metadata.attr << 2) >> 27));
 	return ret;
 };
@@ -695,12 +696,51 @@ void dma_guard_dump(void) {
 	}
 }
 
+static inline void write_dma_guard_keyl(uint64_t keyl) {
+	__asm__ volatile (
+		"csrw dma_guard_keyl, %0"			\
+		: : "r" (keyl)						\
+		: "memory"							\
+	);
+}
+
+static inline uint64_t read_dma_guard_keyl(void) {
+	uint64_t ret;
+	__asm__ volatile (
+		"csrr %[asm_ret], dma_guard_keyl"	\
+		: [asm_ret] "=r" (ret)				\
+		:									\
+		: "memory"							\
+	);
+	return ret;
+}
+
+static inline void write_dma_guard_keyh(uint64_t keyl) {
+	__asm__ volatile (
+		"csrw dma_guard_keyh, %0"			\
+		: : "r" (keyl)						\
+		: "memory"							\
+	);
+}
+
+static inline uint64_t read_dma_guard_keyh(void) {
+	uint64_t ret;
+	__asm__ volatile (
+		"csrr %[asm_ret], dma_guard_keyh"	\
+		: [asm_ret] "=r" (ret)				\
+		:									\
+		: "memory"							\
+	);
+	return ret;
+}
+
 // Take the bare DMA pointer as input, create the mapping, and return the DMAGuard pointer
 __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction) {
 	dma_addr_t ret;
 	uint32_t offset_length = 0;
 	struct dma_guard_metadata metadata;
 	uint16_t hash;
+	// uint64_t read_keyl;
 
 	if (dev_name(dev)[4] == '0') {
 		return dma_handle;
@@ -709,9 +749,30 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 	if (!dma_guard_metadata) { // Not initialized, initialize key, the metadata reset is conducted by the hardware itself
 		uint64_t* dma_guard_key_slot = ioremap(DMA_GUARD_KEY_HARDWARE_ADDR, 0x200000);
 		// uint64_t* dma_guard_key_slot = kmalloc(0x200000, GFP_KERNEL);
+		
+		// lower 64 bit
 		uint64_t key = get_random_u64();
 		*dma_guard_key_slot = key;
-		dma_guard_key = key;
+		dma_guard_keyl = key;
+		write_dma_guard_keyl(key);
+		// upper 64 bit	
+		key = get_random_u64();
+		*(dma_guard_key_slot + 1) = key;
+		dma_guard_keyh = key;
+		write_dma_guard_keyh(key);
+
+		// write_dma_guard_keyl(0xdead0086beef1234UL);
+		// pr_info("write keyl done\n");
+		// read_keyl = read_dma_guard_keyl();
+		// pr_info("get keyl: %016llx\n", read_keyl);
+
+		pr_info("************ All The Keys Are Initialized! **************\n");
+
+		pr_info("In kernel: high: %016llx, low: %016llx\n", dma_guard_keyl, dma_guard_keyh);
+		pr_info("In csrs  : high: %016llx, low: %016llx\n", read_dma_guard_keyl(), read_dma_guard_keyh());
+		pr_info("In guard : high: %016llx, low: %016llx\n", *(dma_guard_key_slot), *(dma_guard_key_slot + 1));
+
+		pr_info("************ All The Keys Are Initialized! **************\n");
 
 		dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
 
