@@ -665,10 +665,17 @@ int dma_direct_set_offset(struct device *dev, phys_addr_t cpu_start,
 #define DMA_GUARD_TABLE_HARDWARE_ADDR 0x60300000
 
 struct __attribute__((__packed__)) dma_guard_metadata {
-	uint32_t attr;
-	uint32_t identifier;
-	uint32_t lower_bound;
-	uint32_t upper_bound;
+	// uint32_t attr;
+	// uint32_t identifier;
+	// uint32_t lower_bound;
+	// uint32_t upper_bound;
+	uint32_t upper_boundl;
+	uint16_t upper_boundh;
+	uint32_t lower_boundl;
+	uint16_t lower_boundh;
+	uint16_t identifierl;
+	uint8_t identifierh;
+	uint8_t attributes;
 };
 
 volatile struct dma_guard_metadata *dma_guard_metadata = NULL;
@@ -678,23 +685,23 @@ volatile int _mapping_count = 0;
 
 volatile uint64_t total_map_operations = 0;
 
-uint16_t dma_guard_hash(dma_addr_t dma_handle, struct dma_guard_metadata metadata) {
-	uint16_t ret;
-	uint32_t xor;
-	xor = metadata.attr ^ metadata.identifier ^ metadata.lower_bound ^ metadata.upper_bound;
-	xor = xor ^ dma_guard_keyl;
-	ret = (xor >> 16) ^ (dma_handle >> ((metadata.attr << 2) >> 27));
-	return ret;
-};
+// uint16_t dma_guard_hash(dma_addr_t dma_handle, struct dma_guard_metadata metadata) {
+// 	uint16_t ret;
+// 	uint32_t xor;
+// 	xor = metadata.attr ^ metadata.identifier ^ metadata.lower_bound ^ metadata.upper_bound;
+// 	xor = xor ^ dma_guard_keyl;
+// 	ret = (xor >> 16) ^ (dma_handle >> ((metadata.attr << 2) >> 27));
+// 	return ret;
+// };
 
-void dma_guard_dump(void) {
-	pr_info("------------------------------------------\n");
-	for (int i = 0; i < 0x10000; i++) {
-		if (dma_guard_metadata[i].attr) {
-			pr_info("[%04x] %08x %08x %08x %08x\n", i, dma_guard_metadata[i].attr, dma_guard_metadata[i].identifier, dma_guard_metadata[i].lower_bound, dma_guard_metadata[i].upper_bound);
-		}
-	}
-}
+// void dma_guard_dump(void) {
+// 	pr_info("------------------------------------------\n");
+// 	for (int i = 0; i < 0x10000; i++) {
+// 		if (dma_guard_metadata[i].attr) {
+// 			pr_info("[%04x] %08x %08x %08x %08x\n", i, dma_guard_metadata[i].attr, dma_guard_metadata[i].identifier, dma_guard_metadata[i].lower_bound, dma_guard_metadata[i].upper_bound);
+// 		}
+// 	}
+// }
 
 static inline void write_dma_guard_keyl(uint64_t keyl) {
 	__asm__ volatile (
@@ -752,6 +759,8 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 	struct dma_guard_metadata metadata;
 	uint16_t hash;
 	uint64_t signed_pointer;
+	uint64_t upper_bound;
+	uint64_t identifier;
 	// uint64_t read_keyl;
 
 	if (dev_name(dev)[4] == '0') {
@@ -793,16 +802,19 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 		dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
 
 		for (int i = 0; i < 0x10000; i++) {
-			dma_guard_metadata[i].attr = 0;
+			dma_guard_metadata[i].attributes = 0;
 		}
 	}
 
-	metadata.lower_bound = dma_handle;
-	metadata.upper_bound = dma_handle + size - 1;
+	upper_bound = dma_handle + size - 1;
+	metadata.lower_boundl = lower_32_bits(dma_handle);
+	metadata.upper_boundl = lower_32_bits(upper_bound);
+	metadata.lower_boundh = (uint16_t)(dma_handle >> 32);
+	metadata.upper_boundh = (uint16_t)(upper_bound >> 32);
 
 	// get common prefix length
-	for (int i = 0; i < 32; i++) {
-		if ((metadata.lower_bound) >> i == (metadata.upper_bound >> i)) {
+	for (int i = 16; i < 48; i++) {
+		if (dma_handle >> i == upper_bound >> i) {
 			offset_length = i;
 			break;			
 		}
@@ -810,33 +822,38 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 	
 	// Here, 00 means no access
 	// 11 mean r/w, 01 mean wo, 10 means ro 
-	metadata.attr = ((~direction) << 30) | (offset_length << 25) | 0;
+	// metadata.attr = ((~direction) << 30) | (offset_length << 25) | 0;
+	metadata.attributes = (uint8_t)((~direction) << 6 | offset_length);
 
 	_mapping_count++;
 
 	while (1) {
-		metadata.identifier = get_random_u32();
+		// metadata.identifier = get_random_u32();
+		identifier = get_random_u32();
+		metadata.identifierh = (uint8_t)(identifier >> 24);
+		metadata.identifierl = lower_16_bits(identifier);
 		// hash = dma_guard_hash(dma_handle, metadata);
 		// pr_info("***hash: %x\n", hash);
 		signed_pointer = dma_guard_sign((dma_handle >> offset_length) << offset_length, (*(uint64_t*)&metadata) ^ (*(((uint64_t*)&metadata) + 1)));
 		// pr_info("signed_pointer: %016llx, sign using: %016llx, %016llx, %016llx\n", signed_pointer, (*(uint64_t*)&metadata), (*(((uint64_t*)&metadata) + 1)), (*(uint64_t*)&metadata) ^ (*(((uint64_t*)&metadata) + 1)));
 		// while (1);
+		// pr_info("metadata generated: hi: %016llx lo: %016llx\n", (*(((uint64_t*)&metadata) + 1)), (*(uint64_t*)&metadata));
 		hash = signed_pointer >> 48;
-		if (dma_guard_metadata[hash].attr == 0) {
+		if (dma_guard_metadata[hash].attributes == 0) {
 			dma_guard_metadata[hash] = metadata;
 			// BUG_ON(dma_guard_metadata[hash].attr == 0);
-			if (
-				(dma_guard_metadata[hash].attr != metadata.attr) ||
-				(dma_guard_metadata[hash].identifier != metadata.identifier) ||
-				(dma_guard_metadata[hash].lower_bound != metadata.lower_bound) ||
-				(dma_guard_metadata[hash].upper_bound != metadata.upper_bound)
-			) {
-				pr_info("Not written correctly, in hardware: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
-				pr_info("Not written correctly, in metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  metadata.attr, metadata.identifier, metadata.lower_bound, metadata.upper_bound, dma_handle, _mapping_count);
-			}
+			// if (
+			// 	(dma_guard_metadata[hash].attr != metadata.attr) ||
+			// 	(dma_guard_metadata[hash].identifier != metadata.identifier) ||
+			// 	(dma_guard_metadata[hash].lower_bound != metadata.lower_bound) ||
+			// 	(dma_guard_metadata[hash].upper_bound != metadata.upper_bound)
+			// ) {
+			// 	pr_info("Not written correctly, in hardware: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
+			// 	pr_info("Not written correctly, in metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  metadata.attr, metadata.identifier, metadata.lower_bound, metadata.upper_bound, dma_handle, _mapping_count);
+			// }
 			break;
 		} else {
-			pr_info("Slot taken, metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
+			// pr_info("Slot taken, metadata: %08x %08x %08x %08x, pointer: %016llx, total mapping: %d\n",  dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle, _mapping_count);
 		}
 	}
 
@@ -859,20 +876,20 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_unmap(struct device *dev, d
 		pr_info("unknown device: %s\n", dev_name(dev));
 	}
 
-	if (((dma_handle & 0xffffffffffff) != dma_guard_metadata[hash].lower_bound) || (dma_handle & 0xffffffffffff) + size != dma_guard_metadata[hash].upper_bound + 1) {
-		pr_info("Not a legal unmap: %016llx, size: %08lx metadata: %08x %08x %08x %08x, pointer: %016llx\n", dma_handle, size, dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle);
-		dma_guard_dump();
-		dump_stack();
-		while (1);
-	}
-	// BUG_ON(dma_guard_metadata[hash].attr == 0);
-	if (dma_guard_metadata[hash].attr == 0) {
-		pr_info("Buffer already unmapped: %016llx, metadata: %08x %08x %08x %08x, pointer: %016llx\n", dma_handle, dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle);
-		dma_guard_dump();
-		dump_stack();
-		while (1);
-	}
-	dma_guard_metadata[hash].attr = 0;
+	// if (((dma_handle & 0xffffffffffff) != dma_guard_metadata[hash].lower_bound) || (dma_handle & 0xffffffffffff) + size != dma_guard_metadata[hash].upper_bound + 1) {
+	// 	pr_info("Not a legal unmap: %016llx, size: %08lx metadata: %08x %08x %08x %08x, pointer: %016llx\n", dma_handle, size, dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle);
+	// 	dma_guard_dump();
+	// 	dump_stack();
+	// 	while (1);
+	// }
+	// // BUG_ON(dma_guard_metadata[hash].attr == 0);
+	// if (dma_guard_metadata[hash].attr == 0) {
+	// 	pr_info("Buffer already unmapped: %016llx, metadata: %08x %08x %08x %08x, pointer: %016llx\n", dma_handle, dma_guard_metadata[hash].attr, dma_guard_metadata[hash].identifier, dma_guard_metadata[hash].lower_bound, dma_guard_metadata[hash].upper_bound, dma_handle);
+	// 	dma_guard_dump();
+	// 	dump_stack();
+	// 	while (1);
+	// }
+	dma_guard_metadata[hash].attributes = 0;
 
 	// BUG_ON((dma_handle & DMA_GUARD_PROTOTYPE_MASK) != DMA_GUARD_PROTOTYPE_MASK);
 	ret = dma_handle & 0xffffffffffff;
