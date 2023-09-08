@@ -12,6 +12,23 @@
 #include <linux/mem_encrypt.h>
 #include <linux/swiotlb.h>
 
+#define DMA_GUARD_KEY_HARDWARE_ADDR 0x60200000
+#define DMA_GUARD_TABLE_HARDWARE_ADDR 0x60300000
+
+struct __attribute__((__packed__)) dma_guard_metadata {
+	// uint32_t attr;
+	// uint32_t identifier;
+	// uint32_t lower_bound;
+	// uint32_t upper_bound;
+	uint32_t upper_boundl;
+	uint16_t upper_boundh;
+	uint32_t lower_boundl;
+	uint16_t lower_boundh;
+	uint16_t identifierl;
+	uint8_t identifierh;
+	uint8_t attributes;
+};
+
 extern unsigned int zone_dma_bits;
 
 /*

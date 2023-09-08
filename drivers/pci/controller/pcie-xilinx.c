@@ -23,6 +23,7 @@
 #include <linux/pci.h>
 #include <linux/pci-ecam.h>
 #include <linux/platform_device.h>
+#include <linux/dma-direct.h>
 
 #include "../pci.h"
 
@@ -571,6 +572,98 @@ struct metadata {
 	// }
 // }
 
+extern volatile struct dma_guard_metadata *dma_guard_metadata;
+
+static inline void write_dma_guard_keyl(uint64_t keyl) {
+	__asm__ volatile (
+		"csrw dma_guard_keyl, %0"			\
+		: : "r" (keyl)						\
+		: "memory"							\
+	);
+}
+
+static inline uint64_t read_dma_guard_keyl(void) {
+	uint64_t ret;
+	__asm__ volatile (
+		"csrr %[asm_ret], dma_guard_keyl"	\
+		: [asm_ret] "=r" (ret)				\
+		:									\
+		: "memory"							\
+	);
+	return ret;
+}
+
+static inline void write_dma_guard_keyh(uint64_t keyh) {
+	__asm__ volatile (
+		"csrw dma_guard_keyh, %0"			\
+		: : "r" (keyh)						\
+		: "memory"							\
+	);
+}
+
+static inline uint64_t read_dma_guard_keyh(void) {
+	uint64_t ret;
+	__asm__ volatile (
+		"csrr %[asm_ret], dma_guard_keyh"	\
+		: [asm_ret] "=r" (ret)				\
+		:									\
+		: "memory"							\
+	);
+	return ret;
+}
+
+static inline void dma_guard_initialize(struct platform_device *pdev) {
+	uint64_t dma_guard_keyh;
+	uint64_t dma_guard_keyl;
+	void* buf_for_vc709 = kmalloc(0x100000, GFP_KERNEL);
+	dma_addr_t handle_for_vc709;
+
+	if (!dma_guard_metadata) { // Not initialized, initialize key, the metadata reset is conducted by the hardware itself
+		uint64_t* dma_guard_key_slot = ioremap(DMA_GUARD_KEY_HARDWARE_ADDR, 0x200000);
+		// uint64_t* dma_guard_key_slot = kmalloc(0x200000, GFP_KERNEL);
+		
+		// lower 64 bit
+		uint64_t key = get_random_u64();
+		*dma_guard_key_slot = key;
+		dma_guard_keyl = key;
+		write_dma_guard_keyl(key);
+		// upper 64 bit	
+		key = get_random_u64();
+		*(dma_guard_key_slot + 1) = key;
+		dma_guard_keyh = key;
+		write_dma_guard_keyh(key);
+
+		// write_dma_guard_keyl(0xdead0086beef1234UL);
+		// pr_info("write keyl done\n");
+		// read_keyl = read_dma_guard_keyl();
+		// pr_info("get keyl: %016llx\n", read_keyl);
+
+		pr_info("************ All The Keys Are Initialized! **************\n");
+
+		pr_info("In kernel: low: %016llx, high: %016llx\n", dma_guard_keyl, dma_guard_keyh);
+		pr_info("In csrs  : low: %016llx, high: %016llx\n", read_dma_guard_keyl(), read_dma_guard_keyh());
+		pr_info("In guard : low: %016llx, high: %016llx\n", *(dma_guard_key_slot), *(dma_guard_key_slot + 1));
+
+		pr_info("************ All The Keys Are Initialized! **************\n");
+
+		// pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
+		// pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
+		// pr_info("test sign: 0x87654321, with 0xcafebabedeadbeef: %016llx\n", dma_guard_sign(0x87654321, 0xcafebabedeadbeef));
+
+		dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
+
+		for (int i = 0; i < 0x10000; i++) {
+			dma_guard_metadata[i].attributes = 0;
+		}
+
+		pr_info("dev_name(&pdev->dev): %s\n", dev_name(&pdev->dev));
+		((char*)dev_name(&pdev->dev))[4] = '1';
+		handle_for_vc709 = dma_map_page_attrs(&pdev->dev, virt_to_page(buf_for_vc709), 0, 0x100000, DMA_BIDIRECTIONAL, 0);
+		((char*)dev_name(&pdev->dev))[4] = '0';
+		pr_info("*********** handle for vc709: %016llx ************\n", handle_for_vc709);
+	}
+}
+
 /**
  * xilinx_pcie_probe - Probe function
  * @pdev: Platform device pointer
@@ -584,53 +677,11 @@ static int xilinx_pcie_probe(struct platform_device *pdev)
 	struct pci_host_bridge *bridge;
 	int err;
 	// dma_guard_check();
-	volatile uint64_t* first_pos;
-	volatile struct metadata *metadata;
 
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram\n");
-	// first_pos = ioremap(0x60200000, 0x200000);
-	// pr_info("[bittervan] ioremap_done\n");
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
-	// first_pos[0] = 0xcafebabedeadbeefUL;
-	// first_pos[1] = 0x0123456789abcdefUL;
-	// pr_info("[bittervan] write done\n");
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[0]);
-	// pr_info("[bittervan] in xilinx_pcie_probe, try to access axi_ram, now read: 0x%016llx\n", first_pos[1]);
-
-
-	// metadata = (struct metadata*)((void*)first_pos + 0x100000);
-
-	// volatile char* metadata_buffer = ioremap(0x60300000, 0x100000);
-	// for (int i = 0; i < 0x100000; i++) {
-	// 	metadata_buffer[i] = ((uint32_t)i) & 0xff;
-	// }
-	// pr_info("[bittervan] writing metadata done\n");
-	// for (int i = 0; i < 0x100000; i++) {
-	// 	if (metadata_buffer[i] != (char)(((uint32_t)i) & 0xff)) {
-	// 		pr_info("[bittervan] metadata is not correct\n");
-	// 		pr_info("********* %x *********\n", i);
-	// 		pr_info("in hardware: %x\n", metadata_buffer[i]);
-	// 		while (1);
-	// 	}
-	// }
-
-	// for (int i = 0; i < 32768; i += 1000) {
-	// 	metadata[i].hi = i;
-	// 	metadata[i].lo = i + 500;
-	// }
-	// pr_info("[bittervan] writing metadata done\n");
-
-	// for (int i = 0; i < 32768; i += 1000) {
-	// 	pr_info("[bittervan] reading metadata %08x: %016llx%016llx\n", i, metadata[i].hi, metadata[i].lo);
-	// }
-
-	// iounmap(first_pos);
+	dma_guard_initialize(pdev);	
 
 	if (!dev->of_node)
 		return -ENODEV;
-
-
 
 	bridge = devm_pci_alloc_host_bridge(dev, sizeof(*pcie));
 	if (!bridge)

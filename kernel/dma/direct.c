@@ -661,23 +661,6 @@ int dma_direct_set_offset(struct device *dev, phys_addr_t cpu_start,
 	return 0;
 }
 
-#define DMA_GUARD_KEY_HARDWARE_ADDR 0x60200000
-#define DMA_GUARD_TABLE_HARDWARE_ADDR 0x60300000
-
-struct __attribute__((__packed__)) dma_guard_metadata {
-	// uint32_t attr;
-	// uint32_t identifier;
-	// uint32_t lower_bound;
-	// uint32_t upper_bound;
-	uint32_t upper_boundl;
-	uint16_t upper_boundh;
-	uint32_t lower_boundl;
-	uint16_t lower_boundh;
-	uint16_t identifierl;
-	uint8_t identifierh;
-	uint8_t attributes;
-};
-
 volatile struct dma_guard_metadata *dma_guard_metadata = NULL;
 volatile uint64_t dma_guard_keyh;
 volatile uint64_t dma_guard_keyl;
@@ -767,44 +750,44 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 		return dma_handle;
 	}
 
-	if (!dma_guard_metadata) { // Not initialized, initialize key, the metadata reset is conducted by the hardware itself
-		uint64_t* dma_guard_key_slot = ioremap(DMA_GUARD_KEY_HARDWARE_ADDR, 0x200000);
-		// uint64_t* dma_guard_key_slot = kmalloc(0x200000, GFP_KERNEL);
+	// if (!dma_guard_metadata) { // Not initialized, initialize key, the metadata reset is conducted by the hardware itself
+	// 	uint64_t* dma_guard_key_slot = ioremap(DMA_GUARD_KEY_HARDWARE_ADDR, 0x200000);
+	// 	// uint64_t* dma_guard_key_slot = kmalloc(0x200000, GFP_KERNEL);
 		
-		// lower 64 bit
-		uint64_t key = get_random_u64();
-		*dma_guard_key_slot = key;
-		dma_guard_keyl = key;
-		write_dma_guard_keyl(key);
-		// upper 64 bit	
-		key = get_random_u64();
-		*(dma_guard_key_slot + 1) = key;
-		dma_guard_keyh = key;
-		write_dma_guard_keyh(key);
+	// 	// lower 64 bit
+	// 	uint64_t key = get_random_u64();
+	// 	*dma_guard_key_slot = key;
+	// 	dma_guard_keyl = key;
+	// 	write_dma_guard_keyl(key);
+	// 	// upper 64 bit	
+	// 	key = get_random_u64();
+	// 	*(dma_guard_key_slot + 1) = key;
+	// 	dma_guard_keyh = key;
+	// 	write_dma_guard_keyh(key);
 
-		// write_dma_guard_keyl(0xdead0086beef1234UL);
-		// pr_info("write keyl done\n");
-		// read_keyl = read_dma_guard_keyl();
-		// pr_info("get keyl: %016llx\n", read_keyl);
+	// 	// write_dma_guard_keyl(0xdead0086beef1234UL);
+	// 	// pr_info("write keyl done\n");
+	// 	// read_keyl = read_dma_guard_keyl();
+	// 	// pr_info("get keyl: %016llx\n", read_keyl);
 
-		pr_info("************ All The Keys Are Initialized! **************\n");
+	// 	pr_info("************ All The Keys Are Initialized! **************\n");
 
-		pr_info("In kernel: low: %016llx, high: %016llx\n", dma_guard_keyl, dma_guard_keyh);
-		pr_info("In csrs  : low: %016llx, high: %016llx\n", read_dma_guard_keyl(), read_dma_guard_keyh());
-		pr_info("In guard : low: %016llx, high: %016llx\n", *(dma_guard_key_slot), *(dma_guard_key_slot + 1));
+	// 	pr_info("In kernel: low: %016llx, high: %016llx\n", dma_guard_keyl, dma_guard_keyh);
+	// 	pr_info("In csrs  : low: %016llx, high: %016llx\n", read_dma_guard_keyl(), read_dma_guard_keyh());
+	// 	pr_info("In guard : low: %016llx, high: %016llx\n", *(dma_guard_key_slot), *(dma_guard_key_slot + 1));
 
-		pr_info("************ All The Keys Are Initialized! **************\n");
+	// 	pr_info("************ All The Keys Are Initialized! **************\n");
 
-		pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
-		pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
-		pr_info("test sign: 0x87654321, with 0xcafebabedeadbeef: %016llx\n", dma_guard_sign(0x87654321, 0xcafebabedeadbeef));
+	// 	pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
+	// 	pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
+	// 	pr_info("test sign: 0x87654321, with 0xcafebabedeadbeef: %016llx\n", dma_guard_sign(0x87654321, 0xcafebabedeadbeef));
 
-		dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
+	// 	dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
 
-		for (int i = 0; i < 0x10000; i++) {
-			dma_guard_metadata[i].attributes = 0;
-		}
-	}
+	// 	for (int i = 0; i < 0x10000; i++) {
+	// 		dma_guard_metadata[i].attributes = 0;
+	// 	}
+	// }
 
 	upper_bound = dma_handle + size - 1;
 	metadata.lower_boundl = lower_32_bits(dma_handle);
