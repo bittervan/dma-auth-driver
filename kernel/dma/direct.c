@@ -715,10 +715,10 @@ static inline uint64_t read_dma_guard_keyl(void) {
 	return ret;
 }
 
-static inline void write_dma_guard_keyh(uint64_t keyl) {
+static inline void write_dma_guard_keyh(uint64_t keyh) {
 	__asm__ volatile (
 		"csrw dma_guard_keyh, %0"			\
-		: : "r" (keyl)						\
+		: : "r" (keyh)						\
 		: "memory"							\
 	);
 }
@@ -734,12 +734,24 @@ static inline uint64_t read_dma_guard_keyh(void) {
 	return ret;
 }
 
+uint64_t dma_guard_sign(uint64_t dma_pointer, uint64_t modifier) {
+	uint64_t ret;
+	__asm__ volatile (
+		".byte 0x6b, 0x05, 0xb5, 0x00"
+		: "=r" (ret)
+		: "r" (dma_pointer), "r" (modifier)
+		: "a1"
+	);
+	return ret;
+}
+
 // Take the bare DMA pointer as input, create the mapping, and return the DMAGuard pointer
 __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction) {
 	dma_addr_t ret;
 	uint32_t offset_length = 0;
 	struct dma_guard_metadata metadata;
 	uint16_t hash;
+	uint64_t signed_pointer;
 	// uint64_t read_keyl;
 
 	if (dev_name(dev)[4] == '0') {
@@ -768,11 +780,15 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 
 		pr_info("************ All The Keys Are Initialized! **************\n");
 
-		pr_info("In kernel: high: %016llx, low: %016llx\n", dma_guard_keyl, dma_guard_keyh);
-		pr_info("In csrs  : high: %016llx, low: %016llx\n", read_dma_guard_keyl(), read_dma_guard_keyh());
-		pr_info("In guard : high: %016llx, low: %016llx\n", *(dma_guard_key_slot), *(dma_guard_key_slot + 1));
+		pr_info("In kernel: low: %016llx, high: %016llx\n", dma_guard_keyl, dma_guard_keyh);
+		pr_info("In csrs  : low: %016llx, high: %016llx\n", read_dma_guard_keyl(), read_dma_guard_keyh());
+		pr_info("In guard : low: %016llx, high: %016llx\n", *(dma_guard_key_slot), *(dma_guard_key_slot + 1));
 
 		pr_info("************ All The Keys Are Initialized! **************\n");
+
+		pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
+		pr_info("test sign: 0x87654321, with 0xdeadbeefcafebabe: %016llx\n", dma_guard_sign(0x87654321, 0xdeadbeefcafebabe));
+		pr_info("test sign: 0x87654321, with 0xcafebabedeadbeef: %016llx\n", dma_guard_sign(0x87654321, 0xcafebabedeadbeef));
 
 		dma_guard_metadata = (void*)dma_guard_key_slot + 0x100000;
 
@@ -800,8 +816,12 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 
 	while (1) {
 		metadata.identifier = get_random_u32();
-		hash = dma_guard_hash(dma_handle, metadata);
+		// hash = dma_guard_hash(dma_handle, metadata);
 		// pr_info("***hash: %x\n", hash);
+		signed_pointer = dma_guard_sign((dma_handle >> offset_length) << offset_length, (*(uint64_t*)&metadata) ^ (*(((uint64_t*)&metadata) + 1)));
+		// pr_info("signed_pointer: %016llx, sign using: %016llx, %016llx, %016llx\n", signed_pointer, (*(uint64_t*)&metadata), (*(((uint64_t*)&metadata) + 1)), (*(uint64_t*)&metadata) ^ (*(((uint64_t*)&metadata) + 1)));
+		// while (1);
+		hash = signed_pointer >> 48;
 		if (dma_guard_metadata[hash].attr == 0) {
 			dma_guard_metadata[hash] = metadata;
 			// BUG_ON(dma_guard_metadata[hash].attr == 0);
@@ -821,6 +841,7 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 	}
 
 	ret = dma_handle | ((uint64_t)hash << 48);
+	// pr_info("ret: %016llx\n", ret);
 
 	// dma_guard_dump();
 	// pr_info("*** DMAGuard *** device: %s, %016llx *** Mapping ***, count: %x\n", dev_name(dev), ret, ++_mapping_count);
