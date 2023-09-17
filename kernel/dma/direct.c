@@ -735,6 +735,8 @@ uint64_t dma_guard_sign(uint64_t dma_pointer, uint64_t modifier) {
 	return ret;
 }
 
+int for_vc709 = 1;
+
 // Take the bare DMA pointer as input, create the mapping, and return the DMAGuard pointer
 __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction) {
 	dma_addr_t ret;
@@ -813,6 +815,9 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 	while (1) {
 		// metadata.identifier = get_random_u32();
 		identifier = get_random_u32();
+		if (for_vc709) {
+			identifier = 0;
+		}
 		metadata.identifierh = (uint8_t)(identifier >> 24);
 		metadata.identifierl = lower_16_bits(identifier);
 		// hash = dma_guard_hash(dma_handle, metadata);
@@ -845,6 +850,8 @@ __attribute__((optimize("O0"))) dma_addr_t dma_guard_map(struct device *dev, dma
 
 	// dma_guard_dump();
 	// pr_info("*** DMAGuard *** device: %s, %016llx *** Mapping ***, count: %x\n", dev_name(dev), ret, ++_mapping_count);
+
+	for_vc709 = 0;
 	return ret;
 }
 

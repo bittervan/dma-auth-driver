@@ -623,12 +623,15 @@ static inline void dma_guard_initialize(struct platform_device *pdev) {
 		// uint64_t* dma_guard_key_slot = kmalloc(0x200000, GFP_KERNEL);
 		
 		// lower 64 bit
-		uint64_t key = get_random_u64();
+		// uint64_t key = get_random_u64();
+
+		// for vc709 test
+		uint64_t key = 0;
 		*dma_guard_key_slot = key;
 		dma_guard_keyl = key;
 		write_dma_guard_keyl(key);
 		// upper 64 bit	
-		key = get_random_u64();
+		// key = get_random_u64();
 		*(dma_guard_key_slot + 1) = key;
 		dma_guard_keyh = key;
 		write_dma_guard_keyh(key);
