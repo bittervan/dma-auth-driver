@@ -656,9 +656,10 @@ static inline void dma_guard_initialize(struct platform_device *pdev) {
 			dma_guard_metadata[i].attributes = 0;
 		}
 
-		pr_info("dev_name(&pdev->dev): %s\n", dev_name(&pdev->dev));
+		// pr_info("dev_name(&pdev->dev): %s\n", dev_name(&pdev->dev));
+		dma_addr_t dma_guard_map(struct device* dev, dma_addr_t dma_handle, size_t size, enum dma_data_direction direction);
 		((char*)dev_name(&pdev->dev))[4] = '1';
-		handle_for_vc709 = dma_map_page_attrs(&pdev->dev, virt_to_page(buf_for_vc709), 0, 0x100000, DMA_BIDIRECTIONAL, 0);
+		handle_for_vc709 = dma_guard_map(&(pdev->dev), 0xc0000000, 0x10000000, DMA_BIDIRECTIONAL);
 		((char*)dev_name(&pdev->dev))[4] = '0';
 		pr_info("*********** handle for vc709: %016llx ************\n", handle_for_vc709);
 	}
