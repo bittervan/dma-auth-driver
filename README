@@ -1,3 +1,5 @@
+Kernel with DMAAUTH driver, authenticating e1000e and nvme devices.
+
 Linux kernel
 ============
 
